@@ -1,20 +1,56 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Transcript Lambda function.
 Resources:
-Description: Create S3 Bucket
+Description: Create a basic S3 Bucket
 Resources:
   S3Bucket1:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: "transcript-source"
+      BucketName:
+        Fn::Join:
+          - "-"
+          - - "transcript-source"
+            - Fn::Select:
+                - 0
+                - Fn::Split:
+                    - "-"
+                    - Fn::Select:
+                        - 2
+                        - Fn::Split:
+                            - "/"
+                            - !Ref "AWS::StackId"
   S3Bucket2:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: "transcript-target"
+      BucketName:
+        Fn::Join:
+          - "-"
+          - - "transcript-target"
+            - Fn::Select:
+                - 0
+                - Fn::Split:
+                    - "-"
+                    - Fn::Select:
+                        - 2
+                        - Fn::Split:
+                            - "/"
+                            - !Ref "AWS::StackId"
   translambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: "trans-lambda-role"
+      RoleName:
+        Fn::Join:
+          - "-"
+          - - "trans-lambda-role"
+            - Fn::Select:
+                - 0
+                - Fn::Split:
+                    - "-"
+                    - Fn::Select:
+                        - 2
+                        - Fn::Split:
+                            - "/"
+                            - !Ref "AWS::StackId"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -32,7 +68,19 @@ Resources:
   Function1:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: "transcribe-func"
+      FunctionName:
+        Fn::Join:
+          - "-"
+          - - "transcribe-func"
+            - Fn::Select:
+                - 0
+                - Fn::Split:
+                    - "-"
+                    - Fn::Select:
+                        - 2
+                        - Fn::Split:
+                            - "/"
+                            - !Ref "AWS::StackId"
       Runtime: python3.7
       Role: !GetAtt 'translambdaRole.Arn'
       Handler: index.handler
@@ -57,10 +105,9 @@ Resources:
                   client = boto3.client('transcribe')
                   
                   response = client.start_transcription_job(
-                      IdentifyLanguage=True,
                       TranscriptionJobName=jobName,
                       Media={'MediaFileUri': s3Path},
-                      OutputBucketName="transcript-target",
+                      OutputBucketName = !Ref S3Bucket2,
                       OutputKey=outputKey
                   )
                   
@@ -76,7 +123,19 @@ Resources:
   Function2:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: "translate-func"
+      FunctionName:
+        Fn::Join:
+          - "-"
+          - - "translate-func"
+            - Fn::Select:
+                - 0
+                - Fn::Split:
+                    - "-"
+                    - Fn::Select:
+                        - 2
+                        - Fn::Split:
+                            - "/"
+                            - !Ref "AWS::StackId"
       Runtime: python3.7
       Role: !GetAtt 'translambdaRole.Arn'
       Handler: index.handler
@@ -98,13 +157,7 @@ Resources:
                   source_fl = client.get_object(Bucket=s3bucket, Key=s3object)
                   content = source_fl['Body']
                   jsonObject = json.loads(content.read())
-                  transcript_json = jsonObject["results"]["transcripts"][0]
-                  transcript_text = transcript_json["transcript"]
-                  translate = boto3.client(service_name='translate')
-                  translated_json = translate.translate_text(Text= transcript_text, SourceLanguageCode="auto", TargetLanguageCode="en")
-                  translated_txt = translated_json.get('TranslatedText')
-                  response = client.put_object(Body=translated_txt,Bucket=s3bucket,Key=output_file)
-
+                  return jsonObject
       Description: Translate Lambda function.
       TracingConfig:
         Mode: Active
@@ -114,4 +167,8 @@ Outputs:
     Value:
       Ref: S3Bucket2
     Export:
-      Name: "target-bucket"
+      Name:
+        Fn::Join:
+          - "-"
+          - - !Ref "AWS::StackName"
+            - "BucketName"
