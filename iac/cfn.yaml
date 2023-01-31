@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Transcript Lambda function.
+Resources:
+Description: Create S3 Bucket
+Resources:
+  S3Bucket1:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: "transcript-source"
+  S3Bucket2:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: "transcript-target"
+  translambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "trans-lambda-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AmazonS3FullAccess
+      - arn:aws:iam::aws:policy/AmazonTranscribeFullAccess
+      - arn:aws:iam::aws:policy/CloudWatchFullAccess
+      - arn:aws:iam::aws:policy/TranslateFullAccess
+  Function1:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: "transcribe-func"
+      Runtime: python3.7
+      Role: !GetAtt 'translambdaRole.Arn'
+      Handler: index.handler
+      Code:
+        ZipFile: |
+              import boto3
+              import uuid
+              import json
+              def handler(event, context):
+              
+                  print(json.dumps(event))
+                  
+                  record = event['Records'][0]
+                  
+                  s3bucket = record['s3']['bucket']['name']
+                  s3object = record['s3']['object']['key']
+                  
+                  s3Path = f's3://{s3bucket}/{s3object}'
+                  jobName = f'{s3object}--{str(uuid.uuid4())}'
+                  outputKey = f'{s3object}-transcript.json'
+                  
+                  client = boto3.client('transcribe')
+                  
+                  response = client.start_transcription_job(
+                      IdentifyLanguage=True,
+                      TranscriptionJobName=jobName,
+                      Media={'MediaFileUri': s3Path},
+                      OutputBucketName="transcript-target",
+                      OutputKey=outputKey
+                  )
+                  
+                  print (json.dumps(response, default=str))
+                  
+                  return {
+                      'TranscriptionJobName': response['TranscriptionJob']['TranscriptionJobName']
+                  }
+      Description: Transcribe Lambda function.
+      TracingConfig:
+        Mode: Active
+
+  Function2:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: "translate-func"
+      Runtime: python3.7
+      Role: !GetAtt 'translambdaRole.Arn'
+      Handler: index.handler
+      Code:
+        ZipFile: |
+
+              import boto3
+              import uuid
+              import json
+
+              def handler(event, context):
+                  print('this is event: ', json.dumps(event))
+                  record = event['Records'][0]
+                  s3bucket = record['s3']['bucket']['name']
+                  s3object = record['s3']['object']['key']
+                  s3Path = f's3://{s3bucket}/{s3object}'
+                  output_file = f'{s3object}-translated.txt'
+                  client = boto3.client('s3')
+                  source_fl = client.get_object(Bucket=s3bucket, Key=s3object)
+                  content = source_fl['Body']
+                  jsonObject = json.loads(content.read())
+                  transcript_json = jsonObject["results"]["transcripts"][0]
+                  transcript_text = transcript_json["transcript"]
+                  translate = boto3.client(service_name='translate')
+                  translated_json = translate.translate_text(Text= transcript_text, SourceLanguageCode="auto", TargetLanguageCode="en")
+                  translated_txt = translated_json.get('TranslatedText')
+                  response = client.put_object(Body=translated_txt,Bucket=s3bucket,Key=output_file)
+
+      Description: Translate Lambda function.
+      TracingConfig:
+        Mode: Active
+Outputs:
+  BucketName:
+    Description: Your new S3 Bucket's name
+    Value:
+      Ref: S3Bucket2
+    Export:
+      Name: "target-bucket"
