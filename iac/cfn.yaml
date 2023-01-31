@@ -105,9 +105,10 @@ Resources:
                   client = boto3.client('transcribe')
                   
                   response = client.start_transcription_job(
+                      IdentifyLanguage=True,
                       TranscriptionJobName=jobName,
                       Media={'MediaFileUri': s3Path},
-                      OutputBucketName = !Ref S3Bucket2,
+                      OutputBucketName = <update-target-s3-bucketname>,
                       OutputKey=outputKey
                   )
                   
@@ -157,7 +158,12 @@ Resources:
                   source_fl = client.get_object(Bucket=s3bucket, Key=s3object)
                   content = source_fl['Body']
                   jsonObject = json.loads(content.read())
-                  return jsonObject
+                  transcript_json = jsonObject["results"]["transcripts"][0]
+                  transcript_text = transcript_json["transcript"]
+                  translate = boto3.client(service_name='translate')
+                  translated_json = translate.translate_text(Text= transcript_text, SourceLanguageCode="auto", TargetLanguageCode="en")
+                  translated_txt = translated_json.get('TranslatedText')
+                  response = client.put_object(Body=translated_txt,Bucket=s3bucket,Key=output_file)
       Description: Translate Lambda function.
       TracingConfig:
         Mode: Active
